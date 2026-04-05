@@ -17,10 +17,14 @@ public class TransactionService {
 
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
+    private final IncentiveService incentiveService;
 
-    public TransactionService(UserRepository userRepository, TransactionRepository transactionRepository) {
+    public TransactionService(UserRepository userRepository,
+                               TransactionRepository transactionRepository,
+                               IncentiveService incentiveService) {
         this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
+        this.incentiveService = incentiveService;
     }
 
     @Transactional
@@ -45,18 +49,23 @@ public class TransactionService {
             return;
         }
 
-        // Apply transaction
+        // Fetch incentive from external API (only for valid transactions)
+        float incentiveAmount = incentiveService.getIncentive(transaction);
+
+        // Apply transaction:
+        // - Deduct amount from sender
+        // - Credit amount + incentive to recipient (incentive NOT deducted from sender)
         sender.setBalance(sender.getBalance() - transaction.getAmount());
-        recipient.setBalance(recipient.getBalance() + transaction.getAmount());
+        recipient.setBalance(recipient.getBalance() + transaction.getAmount() + incentiveAmount);
 
         userRepository.save(sender);
         userRepository.save(recipient);
 
-        TransactionRecord record = new TransactionRecord(sender, recipient, transaction.getAmount());
+        TransactionRecord record = new TransactionRecord(sender, recipient, transaction.getAmount(), incentiveAmount);
         transactionRepository.save(record);
 
-        logger.info("Processed: {} -> {} : amount={} | sender balance={} | recipient balance={}",
-                sender.getName(), recipient.getName(), transaction.getAmount(),
+        logger.info("Processed: {} -> {} | amount={} | incentive={} | sender balance={} | recipient balance={}",
+                sender.getName(), recipient.getName(), transaction.getAmount(), incentiveAmount,
                 sender.getBalance(), recipient.getBalance());
     }
 }
